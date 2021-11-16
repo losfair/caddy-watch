@@ -1,4 +1,4 @@
-name: bsync.build
+name: build
 on:
 - push
 
