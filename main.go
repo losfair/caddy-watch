@@ -37,10 +37,18 @@ func buildInterestDispatcher(logger *zap.Logger, configPath string) (*interest.I
 		return nil, errors.Wrap(err, "cannot parse config")
 	}
 
+	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	if botToken == "" {
+		logger.Warn("TELEGRAM_BOT_TOKEN is not set, falling back to `telegram.botToken`")
+		botToken = configDef.Telegram.BotToken
+	} else {
+		logger.Info("using environment variable TELEGRAM_BOT_TOKEN")
+	}
+
 	return interest.NewInterestDispatcher(
 		logger.With(zap.String("component", "interest-dispatcher")),
 		configDef.Interests,
-		configDef.Telegram.BotToken,
+		botToken,
 		configDef.Telegram.ToChat,
 	)
 }

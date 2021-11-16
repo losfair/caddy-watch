@@ -1,7 +1,10 @@
 package interest
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -22,11 +25,12 @@ type InterestDef struct {
 }
 
 type InterestMatcher struct {
-	All    []*InterestMatcher
-	Any    []*InterestMatcher
-	Status *InterestMatcher_Status
-	Host   *string
-	Method *string
+	All        []*InterestMatcher
+	Any        []*InterestMatcher
+	Status     *InterestMatcher_Status
+	Host       *string
+	Method     *string
+	UriPattern *string `yaml:"uriPattern"`
 }
 
 type InterestMatcher_Status struct {
@@ -40,15 +44,18 @@ type interestMatchContext struct {
 }
 
 type interestSuppressionKey struct {
-	remoteIp string
-	host     string
+	interestName string
+	remoteIp     string
+	host         string
 }
 
 func (k interestSuppressionKey) String() string {
-	return k.remoteIp + "/" + k.host
+	return base64.StdEncoding.EncodeToString([]byte(k.interestName)) +
+		":" + base64.StdEncoding.EncodeToString([]byte(k.remoteIp)) +
+		":" + base64.StdEncoding.EncodeToString([]byte(k.host))
 }
 
-func (ctx *interestMatchContext) match(m *InterestMatcher) bool {
+func (ctx *interestMatchContext) match(m *InterestMatcher) (result bool) {
 	for _, subM := range m.All {
 		if !ctx.match(subM) {
 			return false
@@ -97,6 +104,16 @@ func (ctx *interestMatchContext) match(m *InterestMatcher) bool {
 		}
 	}
 
+	if m.UriPattern != nil {
+		jUri, ok := ctx.j.Path("request.uri").Data().(string)
+		if !ok {
+			return false
+		}
+		if ok, _ := regexp.MatchString(*m.UriPattern, jUri); !ok {
+			return false
+		}
+	}
+
 	return true
 }
 
@@ -109,7 +126,8 @@ type InterestDispatcher struct {
 }
 
 func NewInterestDispatcher(logger *zap.Logger, interests []InterestDef, botToken string, toChat int64) (*InterestDispatcher, error) {
-	logger.Info("connecting to telegram bot api")
+	interestsJson, _ := json.Marshal(interests)
+	logger.Info("creating dispatcher", zap.String("interests", string(interestsJson)), zap.Int("bot_token_length", len(botToken)))
 	botApi, err := tgbotapi.NewBotAPI(botToken)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot connect to telegram bot api")
@@ -152,8 +170,9 @@ func (d *InterestDispatcher) Dispatch(message *kafka.Message) {
 				remoteIp := strings.Split(remoteAddr, ":")[0]
 
 				key := interestSuppressionKey{
-					remoteIp: remoteIp,
-					host:     host,
+					interestName: interest.Name,
+					remoteIp:     remoteIp,
+					host:         host,
 				}.String()
 				if _, err := d.suppressCache.Get(key); err == nil {
 					continue
@@ -168,20 +187,23 @@ func (d *InterestDispatcher) Dispatch(message *kafka.Message) {
 
 func (d *InterestDispatcher) sendToTelegram(interest *InterestDef, j *gabs.Container) {
 	ts, _ := j.Path("ts").Data().(float64)
+	host, _ := j.Path("request.host").Data().(string)
+	commonLog, _ := j.Path("common_log").Data().(string)
+	remoteAddr, _ := j.Path("request.remote_addr").Data().(string)
+
 	parseMode := tgbotapi.ModeMarkdown
 
 	d.logger.Info("sending to telegram", zap.String("interest_name", interest.Name))
-	body := "```" + `
+	body := `
 Interest: ` + tgbotapi.EscapeText(parseMode, interest.Name) + `
 Description: ` + tgbotapi.EscapeText(parseMode, interest.Description) + `
 Timestamp: ` + fmt.Sprintf("%f", ts) + `
 Time: ` + time.Unix(int64(ts), 0).Format(time.RFC3339) + `
-Host: ` + tgbotapi.EscapeText(parseMode, j.Path("request.host").String()) + `
-Method: ` + tgbotapi.EscapeText(parseMode, j.Path("request.method").String()) + `
-Status: ` + tgbotapi.EscapeText(parseMode, j.Path("status").String()) + `
-URI: ` + tgbotapi.EscapeText(parseMode, j.Path("request.uri").String()) + `
-Remote: ` + tgbotapi.EscapeText(parseMode, j.Path("request.remote_addr").String()) + `
-` + "```"
+Host: ` + tgbotapi.EscapeText(parseMode, host) + `
+Remote: ` + tgbotapi.EscapeText(parseMode, strings.Split(remoteAddr, ":")[0]) + `
+
+` + tgbotapi.EscapeText(parseMode, commonLog) + `
+`
 
 	msg := tgbotapi.NewMessage(d.toChat, body)
 	msg.ParseMode = parseMode
