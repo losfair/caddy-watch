@@ -207,10 +207,16 @@ Remote: ` + tgbotapi.EscapeText(parseMode, strings.Split(remoteAddr, ":")[0]) + 
 
 	msg := tgbotapi.NewMessage(d.toChat, body)
 	msg.ParseMode = parseMode
-	_, err := d.botApi.Send(msg)
-	if err != nil {
-		d.logger.Error("cannot send message to telegram", zap.Error(err))
-	} else {
-		d.logger.Info("message sent to telegram")
+
+	for i := 0; i < 5; i++ {
+		_, err := d.botApi.Send(msg)
+		if err != nil {
+			d.logger.Error("cannot send message to telegram", zap.Int("attempt", i+1), zap.Error(err))
+			time.Sleep(5 * time.Second)
+		} else {
+			d.logger.Info("message sent to telegram")
+			return
+		}
 	}
+	d.logger.Error("giving up sending message to telegram", zap.Float64("ts", ts))
 }
