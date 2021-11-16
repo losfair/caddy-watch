@@ -147,6 +147,12 @@ func (d *InterestDispatcher) Close() {
 	d.suppressCache.Close()
 }
 
+func (d *InterestDispatcher) SwapState(that *InterestDispatcher) {
+	t := that.suppressCache
+	that.suppressCache = d.suppressCache
+	d.suppressCache = t
+}
+
 func (d *InterestDispatcher) Dispatch(message *kafka.Message) {
 	j, err := gabs.ParseJSON(message.Value)
 	if err != nil {

@@ -103,6 +103,7 @@ func main() {
 				logger.Error("cannot build new interest dispatcher", zap.Error(err))
 				continue
 			}
+			newInterestDispatcher.SwapState(interestDispatcher)
 			interestDispatcher.Close()
 			interestDispatcher = newInterestDispatcher
 			logger.Info("config reload succeeded")
