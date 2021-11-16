@@ -35,6 +35,7 @@ telegram:
 ```
 docker run -it --rm \
   -e TELEGRAM_BOT_TOKEN="<put your telegram bot token here>" \
+  -v "$PWD/caddy-watch.yaml:/caddy-watch.yaml" \
   ghcr.io/losfair/caddy-watch \
   -bootstrap-servers localhost:9093 \
   -config ./caddy-watch.yaml \
