@@ -27,6 +27,7 @@ type InterestDef struct {
 type InterestMatcher struct {
 	All        []*InterestMatcher
 	Any        []*InterestMatcher
+	Not        *InterestMatcher
 	Status     *InterestMatcher_Status
 	Host       *string
 	Method     *string
@@ -71,6 +72,12 @@ func (ctx *interestMatchContext) match(m *InterestMatcher) (result bool) {
 	}
 	if len(m.Any) != 0 && !anyMatch {
 		return false
+	}
+
+	if m.Not != nil {
+		if ctx.match(m.Not) {
+			return false
+		}
 	}
 
 	if m.Status != nil {
